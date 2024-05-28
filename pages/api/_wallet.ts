@@ -18,4 +18,4 @@ export const walletFujiClient = createWalletClient({
   transport: http()
 });
 
-export const faucetAccount = privateKeyToAccount(process.env.PK as `0x${string}`);
+//export const faucetAccount = privateKeyToAccount(process.env.PK as `0x${string}`);

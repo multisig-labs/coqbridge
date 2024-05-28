@@ -9,7 +9,6 @@ export default function Navbar() {
       <div className="flex-none">
         <ul className="menu menu-horizontal px-1">
           <li>
-            <ConnectButton />
           </li>
         </ul>
       </div>

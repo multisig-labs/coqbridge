@@ -73,16 +73,17 @@ const Swap = () => {
           250000n, // Gas is important to be high enough at the moment, lest it suck up your tokens
           zeroAddress,
         ],
-        20000n,
+        swapAmount,
       ],
     });
   };
   const approveCoq = () => {
+    if (!address || swapAmount == 0) return;
     writeCoqnet({
       address: CoqinuFuji,
       abi: erc20,
       functionName: "approve",
-      args: [erc20SourceAddress, 20000n],
+      args: [erc20SourceAddress, swapAmount],
     });
   };
 
@@ -154,7 +155,6 @@ const Swap = () => {
               <input
                 placeholder="0.0"
                 type="number"
-                value={swapAmount}
                 onChange={(e) => setSwapAmount(Number(e.target.value))}
                 className="input input-bordered input-primary flex-1 text-white bg-gray-500 placeholder-gray-500 border-none outline-none max-w-full"
               />
@@ -203,14 +203,14 @@ const Swap = () => {
                 placeholder="0.0"
                 type="number"
                 value={swapAmount}
-                onChange={(e) => setSwapAmount(Number(e.target.value))}
+                disabled
                 className="input input-bordered input-primary flex-1 text-white bg-gray-500 placeholder-gray-500 border-none outline-none max-w-full"
               />
             </div>
             {/* Display the user's balance on c chain */}
             <div className="flex items-center justify-between">
               <span className="text-gray-400 text-xs">
-                {coqnetBalance.toFixed(0)} COQ Native token available
+                {coqnetBalance.toString()} COQ Native token available
               </span>
             </div>
           </div>

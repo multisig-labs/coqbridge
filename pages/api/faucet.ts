@@ -1,7 +1,7 @@
 // pages/api/hello.js
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { parseEther } from 'viem';
-import { walletFujiClient, publicFujiClient, faucetAccount } from './_wallet';
+import { walletFujiClient, publicFujiClient, faucetAccount } from '../../utils/wallet';
 import { CoqinuFuji } from '../../utils/constants';
 import { erc20 } from '../../utils/abi';
 

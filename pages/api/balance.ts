@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { publicFujiClient, publicCoqnetClient } from './_wallet';
+import { publicFujiClient, publicCoqnetClient } from '../../utils/wallet';
 import { CoqinuFuji } from '../../utils/constants';
 import { erc20 } from '../../utils/abi';
 import { etherToNumber } from '../../utils/conversion';

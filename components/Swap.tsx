@@ -8,7 +8,7 @@ import {
   erc20SourceAddress,
   nativeTokenDestinationAddress,
 } from "../utils/constants";
-import { zeroAddress } from "viem";
+import { parseEther, zeroAddress } from "viem";
 import { erc20, erc20source } from "../utils/abi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import Image from "next/image";
@@ -23,6 +23,8 @@ const Swap = () => {
   const [swapAmount, setSwapAmount] = useState(0);
   const [loading, setLoading] = useState(true);
   const { address } = useAccount();
+
+  const formattedSwapAmount = parseEther(swapAmount.toString());
 
   const { writeContract: writeCoqnet } = useWriteContract();
   const { allowance } = useTokenInfo(CoqinuFuji, address, erc20SourceAddress);
@@ -73,7 +75,7 @@ const Swap = () => {
           250000n, // Gas is important to be high enough at the moment, lest it suck up your tokens
           zeroAddress,
         ],
-        swapAmount,
+        formattedSwapAmount,
       ],
     });
   };
@@ -83,7 +85,7 @@ const Swap = () => {
       address: CoqinuFuji,
       abi: erc20,
       functionName: "approve",
-      args: [erc20SourceAddress, swapAmount],
+      args: [erc20SourceAddress, formattedSwapAmount],
     });
   };
 

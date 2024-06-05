@@ -1,33 +1,33 @@
 import { useState } from "react";
-import { useAccount, useWriteContract } from "wagmi";
+import { useAccount } from "wagmi";
 import useAsyncEffect from "use-async-effect";
-import { useTokenInfo } from "../hooks/useTokenInfo";
-import {
-  CoqinuFuji,
-  coqnetBlockchainIDHex,
-  erc20SourceAddress,
-  nativeTokenDestinationAddress,
-} from "../utils/constants";
-import { parseEther, zeroAddress } from "viem";
-import { erc20, erc20source } from "../utils/abi";
+import { parseEther } from "viem";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import Image from "next/image";
+
+import useApproveERC20 from "../hooks/useApprove";
+import useBridge from "../hooks/useBridge";
+import { erc20SourceAddress } from "../utils/constants";
 
 const showModal = (n: string) =>
   // @ts-expect-error this is standard for daisyUI
   document.getElementById(n)?.showModal();
 
 const Swap = () => {
+  const [gotCoq, setGotCoq] = useState(false);
   const [coqnetBalance, setCoqnetBalance] = useState(0);
   const [fujiBalance, setFujiBalance] = useState(0);
-  const [swapAmount, setSwapAmount] = useState(0);
+  const [swapAmount, setSwapAmount] = useState(2);
   const [loading, setLoading] = useState(true);
   const { address } = useAccount();
+  const { bridge, isLoading: bridgeLoading, error: bridgeError } = useBridge();
+  const {
+    approve,
+    error: approveError,
+  } = useApproveERC20();
 
   const formattedSwapAmount = parseEther(swapAmount.toString());
 
-  const { writeContract: writeCoqnet } = useWriteContract();
-  const { allowance } = useTokenInfo(CoqinuFuji, address, erc20SourceAddress);
   useAsyncEffect(async () => {
     if (!address) return;
     // check /api/balance to see if the user has any Coq
@@ -36,57 +36,61 @@ const Swap = () => {
     setFujiBalance(data.fuji);
     setCoqnetBalance(data.coqnet);
     setLoading(false);
-  }, [address]);
+  }, [address, gotCoq]);
 
-  const getCoq = () => {
+  const getCoq = async () => {
     if (address) {
       setLoading(true);
-      fetch("/api/faucet", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ address }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          console.log(data);
-          setLoading(false);
-          showModal("got_coq");
+      try {
+        const res = await fetch("/api/faucet", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ address }),
         });
+        const data = await res.json();
+        console.log(data);
+        setLoading(false);
+        showModal("got_coq");
+      } catch (error) {
+        console.error(error);
+        setLoading(false);
+        // Handle error here
+      }
     }
     setLoading(false);
+    setGotCoq(!gotCoq); // dirty hack to get the balance to update
   };
 
-  const swapCoq = () => {
-    if (!address || swapAmount == 0) return;
-    writeCoqnet({
-      address: erc20SourceAddress,
-      abi: erc20source,
-      functionName: "send",
-      args: [
-        [
-          coqnetBlockchainIDHex,
-          nativeTokenDestinationAddress,
-          address,
-          CoqinuFuji,
-          0n,
-          0n,
-          250000n, // Gas is important to be high enough at the moment, lest it suck up your tokens
-          zeroAddress,
-        ],
-        formattedSwapAmount,
-      ],
-    });
-  };
-  const approveCoq = () => {
-    if (!address || swapAmount == 0) return;
-    writeCoqnet({
-      address: CoqinuFuji,
-      abi: erc20,
-      functionName: "approve",
-      args: [erc20SourceAddress, formattedSwapAmount],
-    });
+  const swapCoq = async () => {
+    setLoading(true);
+    try {
+      await approve(erc20SourceAddress as `0x${string}`, formattedSwapAmount);
+      // if there was an error, show the error dialog
+      if (approveError) {
+        showModal("error_coq");
+        console.error(approveError);
+        return;
+      } else {
+        await bridge(formattedSwapAmount);
+        // wait until bridge is not loading
+        while (bridgeLoading) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        // if there was an error, show the error dialog
+        if (bridgeError) {
+          showModal("error_coq");
+          console.error(bridgeError);
+          return;
+        } else {
+          showModal("bridge_coq");
+        }
+      }
+    } catch (error) {
+      console.error(error);
+    }
+    setLoading(false);
   };
 
   const ActionButton = () => {
@@ -99,17 +103,6 @@ const Swap = () => {
         >
           {loading && <span className="loading loading-spinner"></span>}
           Get Some Coq
-        </button>
-      );
-    } else if (allowance == 0n) {
-      return (
-        <button
-          disabled={loading}
-          onClick={approveCoq}
-          className="btn btn-success btn-lg btn-wide"
-        >
-          {loading && <span className="loading loading-spinner"></span>}
-          Approve Coq
         </button>
       );
     } else {
@@ -125,6 +118,7 @@ const Swap = () => {
       );
     }
   };
+
   return (
     <div className="card bg-black p-6 max-w-4xl mx-auto rounded-xl text-white space-y-8">
       {/* Header */}

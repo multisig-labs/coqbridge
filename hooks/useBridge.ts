@@ -17,7 +17,7 @@ const useBridge = () => {
   const { address } = useAccount();
   const { data: walletClient } = useWalletClient();
 
-  const bridge = useCallback(
+  const bridge =
     async (amount: bigint) => {
       try {
         if (!address || !walletClient) {
@@ -58,9 +58,7 @@ const useBridge = () => {
         setIsLoading(false)
         return null
       }
-    },
-    [walletClient, address]
-  )
+    }
 
   return { isLoading, error, txHash, bridge }
 }

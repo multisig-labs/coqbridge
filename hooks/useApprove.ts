@@ -11,7 +11,7 @@ const useApproveERC20 = (tokenAddress = CoqinuFuji as `0x${string}`) => {
   const { address } = useAccount();
   const { data: walletClient } = useWalletClient();
 
-  const approve = useCallback(
+  const approve =
     async (spenderAddress: `0x${string}`, amountToApprove: bigint) => {
       try {
         setIsLoading(true)
@@ -40,9 +40,7 @@ const useApproveERC20 = (tokenAddress = CoqinuFuji as `0x${string}`) => {
       }
 
       return null;
-    },
-    [walletClient, address, tokenAddress, error]
-  )
+    }
 
   return { isLoading, error, txHash, approve }
 }

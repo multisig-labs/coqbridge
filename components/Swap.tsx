@@ -17,7 +17,34 @@ const showModal = (n: string) =>
   // @ts-expect-error this is standard for daisyUI
   document.getElementById(n)?.showModal();
 
+const AvalancheNetwork = () => (
+  <div className="flex items-center space-x-4">
+    <Image
+      alt="avax"
+      src="/avax.png"
+      className="rounded-full"
+      width={30}
+      height={30}
+    />
+    <span className="text-gray-400">Avalanche</span>
+  </div>
+);
+
+const CoqNetwork = () => (
+  <div className="flex items-center space-x-4">
+    <Image
+      alt="coqnet"
+      src="/coqnet.png"
+      className="rounded-full"
+      width={30}
+      height={30}
+    />
+    <span className="text-gray-400">Coqnet</span>
+  </div>
+);
+
 const Swap = () => {
+  const [direction, setDirection] = useState<"coqnet" | "fuji">("coqnet");
   const [coqnetBalance, setCoqnetBalance] = useState(0);
   const [fujiBalance, setFujiBalance] = useState(0);
   const [swapAmount, setSwapAmount] = useState(0);
@@ -37,6 +64,10 @@ const Swap = () => {
     setCoqnetBalance(data.coqnet);
     setLoading(false);
   }, [address]);
+
+  const toggleDirection = () => {
+    setDirection(direction === "coqnet" ? "fuji" : "coqnet");
+  };
 
   const getCoq = () => {
     if (address) {
@@ -101,7 +132,7 @@ const Swap = () => {
           Get Some Coq
         </button>
       );
-    } else if (allowance == 0n) {
+    } else if (allowance < formattedSwapAmount) {
       return (
         <button
           disabled={loading}
@@ -120,7 +151,7 @@ const Swap = () => {
           className="btn btn-success btn-lg btn-wide"
         >
           {loading && <span className="loading loading-spinner"></span>}
-          Swap Coq
+          Bridge Coq
         </button>
       );
     }
@@ -143,16 +174,7 @@ const Swap = () => {
         <div className="flex justify-between space-x-8 items-center">
           <div className="rounded-lg space-y-4">
             <h4 className="text-xl font-bold">From</h4>
-            <div className="flex items-center space-x-4">
-              <Image
-                alt="avax"
-                src="/avax.png"
-                className="rounded-full"
-                width={30}
-                height={30}
-              />
-              <span className="text-gray-400">Avalanche</span>
-            </div>
+            {direction === "coqnet" ? <AvalancheNetwork /> : <CoqNetwork />}
             <div className="flex items-end justify-between space-x-4">
               <input
                 placeholder="0.0"
@@ -164,12 +186,18 @@ const Swap = () => {
             {/* Display the user's balance on c chain */}
             <div className="flex items-center justify-between">
               <span className="text-gray-400 text-xs">
-                {fujiBalance.toFixed(0)} COQ token available
+                {direction === "coqnet"
+                  ? fujiBalance.toFixed(0)
+                  : coqnetBalance.toFixed(0)}{" "}
+                COQ token available
               </span>
             </div>
           </div>
           <div>
-            <div className="flex flex-col items-center justify-center space-y-4">
+            <div
+              className="flex flex-col items-center justify-center space-y-4 hover:cursor-pointer"
+              onClick={toggleDirection}
+            >
               <div className="w-px h-24 bg-gray-400"></div>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -190,16 +218,7 @@ const Swap = () => {
           </div>
           <div className="rounded-lg space-y-4">
             <h4 className="text-xl font-bold">To</h4>
-            <div className="flex items-center space-x-4">
-              <Image
-                alt="coqnet"
-                src="/coqnet.png"
-                className="rounded-full"
-                width={30}
-                height={30}
-              />
-              <span className="text-gray-400">Coqnet</span>
-            </div>
+            {direction === "coqnet" ? <CoqNetwork /> : <AvalancheNetwork />}
             <div className="flex items-end justify-between space-x-4">
               <input
                 placeholder="0.0"
@@ -212,7 +231,13 @@ const Swap = () => {
             {/* Display the user's balance on c chain */}
             <div className="flex items-center justify-between">
               <span className="text-gray-400 text-xs">
-                {coqnetBalance.toString()} COQ Native token available
+                {
+                  // Display the user's balance on c chain
+                  direction === "coqnet"
+                    ? coqnetBalance.toFixed(0)
+                    : fujiBalance.toFixed(0)
+                }{" "}
+                COQ token available
               </span>
             </div>
           </div>

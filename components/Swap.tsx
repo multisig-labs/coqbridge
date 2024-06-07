@@ -1,15 +1,21 @@
-import { useState } from "react";
-import { useAccount, useWriteContract } from "wagmi";
+import { useEffect, useState } from "react";
+import {
+  useAccount,
+  useChainId,
+  useSwitchChain,
+  useWriteContract,
+} from "wagmi";
 import useAsyncEffect from "use-async-effect";
 import { useTokenInfo } from "../hooks/useTokenInfo";
 import {
   CoqinuFuji,
   coqnetBlockchainIDHex,
   erc20SourceAddress,
+  fujiCChainBlockchainIDHex,
   nativeTokenDestinationAddress,
 } from "../utils/constants";
 import { parseEther, zeroAddress } from "viem";
-import { erc20, erc20source } from "../utils/abi";
+import { erc20, erc20source, nativeTokenDestination } from "../utils/abi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import Image from "next/image";
 
@@ -48,6 +54,8 @@ const Swap = () => {
   const [coqnetBalance, setCoqnetBalance] = useState(0);
   const [fujiBalance, setFujiBalance] = useState(0);
   const [swapAmount, setSwapAmount] = useState(0);
+  const { switchChain, chains } = useSwitchChain();
+  const chainID = useChainId();
   const [loading, setLoading] = useState(true);
   const { address } = useAccount();
 
@@ -63,10 +71,25 @@ const Swap = () => {
     setFujiBalance(data.fuji);
     setCoqnetBalance(data.coqnet);
     setLoading(false);
-  }, [address]);
+  }, [address, loading]);
+
+  useEffect(() => {
+    console.log(chains);
+  }, [chains]);
 
   const toggleDirection = () => {
     setDirection(direction === "coqnet" ? "fuji" : "coqnet");
+    swapChain();
+  };
+
+  const swapChain = () => {
+    // there's only two chains, so we can just toggle between them
+    // chains are an array so we have to get the current chain
+    // and swap to the one that isn't the current chain
+    const currentChain = chains.find((c) => c.id === chainID);
+    const newChain = chains.find((c) => c.id !== chainID);
+    if (!currentChain || !newChain) return;
+    switchChain({ chainId: newChain.id });
   };
 
   const getCoq = () => {
@@ -90,34 +113,58 @@ const Swap = () => {
   };
 
   const swapCoq = () => {
+    console.log("swapCoq");
     if (!address || swapAmount == 0) return;
-    writeCoqnet({
-      address: erc20SourceAddress,
-      abi: erc20source,
-      functionName: "send",
-      args: [
-        [
-          coqnetBlockchainIDHex,
-          nativeTokenDestinationAddress,
-          address,
-          CoqinuFuji,
-          0n,
-          0n,
-          250000n, // Gas is important to be high enough at the moment, lest it suck up your tokens
-          zeroAddress,
+    if (chainID === 43113) {
+      writeCoqnet({
+        address: erc20SourceAddress,
+        abi: erc20source,
+        functionName: "send",
+        args: [
+          [
+            coqnetBlockchainIDHex,
+            nativeTokenDestinationAddress,
+            address,
+            CoqinuFuji,
+            0n,
+            0n,
+            250000n, // Gas is important to be high enough at the moment, lest it suck up your tokens
+            zeroAddress,
+          ],
+          formattedSwapAmount,
         ],
-        formattedSwapAmount,
-      ],
-    });
+      });
+    } else {
+      console.log("Bridging native coq")
+      writeCoqnet({
+        address: nativeTokenDestinationAddress,
+        abi: nativeTokenDestination,
+        functionName: "send",
+        args: [
+          [
+            fujiCChainBlockchainIDHex,
+            erc20SourceAddress,
+            address,
+            0n,
+            0n,
+            250000n, // Gas is important to be high enough at the moment, lest it suck up your tokens
+            zeroAddress,
+          ],
+        ],
+        value: formattedSwapAmount,
+      });
+    }
   };
   const approveCoq = () => {
     if (!address || swapAmount == 0) return;
-    writeCoqnet({
-      address: CoqinuFuji,
-      abi: erc20,
-      functionName: "approve",
-      args: [erc20SourceAddress, formattedSwapAmount],
-    });
+    if (chainID === 43113) {
+      writeCoqnet({
+        address: CoqinuFuji,
+        abi: erc20,
+        functionName: "approve",
+        args: [erc20SourceAddress, formattedSwapAmount],
+      });
+    }
   };
 
   const ActionButton = () => {
@@ -132,7 +179,7 @@ const Swap = () => {
           Get Some Coq
         </button>
       );
-    } else if (allowance < formattedSwapAmount) {
+    } else if (allowance < formattedSwapAmount && chainID === 43113) {
       return (
         <button
           disabled={loading}

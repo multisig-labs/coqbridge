@@ -61,7 +61,7 @@ const Swap = () => {
 
   const formattedSwapAmount = parseEther(swapAmount.toString());
 
-  const { writeContract: writeCoqnet } = useWriteContract();
+  const { writeContract: writeCoqnet, error } = useWriteContract();
   const { allowance } = useTokenInfo(CoqinuFuji, address, erc20SourceAddress);
   useAsyncEffect(async () => {
     if (!address) return;
@@ -76,6 +76,13 @@ const Swap = () => {
   useEffect(() => {
     console.log(chains);
   }, [chains]);
+
+  useEffect(() => {
+    if (error) {
+      showModal("error_coq");
+      console.error(error);
+    }
+  }, [error]);
 
   const toggleDirection = () => {
     setDirection(direction === "coqnet" ? "fuji" : "coqnet");
@@ -135,7 +142,6 @@ const Swap = () => {
         ],
       });
     } else {
-      console.log("Bridging native coq")
       writeCoqnet({
         address: nativeTokenDestinationAddress,
         abi: nativeTokenDestination,
@@ -145,6 +151,7 @@ const Swap = () => {
             fujiCChainBlockchainIDHex,
             erc20SourceAddress,
             address,
+            zeroAddress,
             0n,
             0n,
             250000n, // Gas is important to be high enough at the moment, lest it suck up your tokens
@@ -155,6 +162,7 @@ const Swap = () => {
       });
     }
   };
+
   const approveCoq = () => {
     if (!address || swapAmount == 0) return;
     if (chainID === 43113) {

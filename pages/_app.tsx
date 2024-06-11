@@ -4,27 +4,15 @@ import type { AppProps } from "next/app";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "wagmi";
-import { avalancheFuji } from "wagmi/chains";
-import {
-  getDefaultConfig,
-  RainbowKitProvider,
-  midnightTheme,
-} from "@rainbow-me/rainbowkit";
+import { RainbowKitProvider, midnightTheme } from "@rainbow-me/rainbowkit";
 
-import { coqnet } from "../utils/chain";
-
-const config = getDefaultConfig({
-  appName: "CoqBridge",
-  projectId: "14ced539274121ccca8d831af2c0a924",
-  chains: [avalancheFuji, coqnet],
-  ssr: true,
-});
+import { wagmiConfig } from "../utils/wagmiConfig";
 
 const client = new QueryClient();
 
-function MyApp({ Component, pageProps }: AppProps) {
+function Bridge({ Component, pageProps }: AppProps) {
   return (
-    <WagmiProvider config={config}>
+    <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={client}>
         <RainbowKitProvider theme={midnightTheme()}>
           <Component {...pageProps} />
@@ -34,4 +22,4 @@ function MyApp({ Component, pageProps }: AppProps) {
   );
 }
 
-export default MyApp;
+export default Bridge;

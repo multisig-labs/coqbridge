@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import {
   useAccount,
+  useBalance,
   useChainId,
+  useConfig,
+  usePublicClient,
   useSwitchChain,
+  useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
 import useAsyncEffect from "use-async-effect";
@@ -14,10 +18,12 @@ import {
   fujiCChainBlockchainIDHex,
   nativeTokenDestinationAddress,
 } from "../utils/constants";
-import { parseEther, zeroAddress } from "viem";
+import { formatEther, parseEther, zeroAddress } from "viem";
 import { erc20, erc20source, nativeTokenDestination } from "../utils/abi";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
 import Image from "next/image";
+import { BiTransferAlt } from "react-icons/bi";
+import { RainbowKitCustomConnectButton } from "./ConnectButton";
+import { coqnet, publicCoqnetClient, publicFujiClient } from "../utils/chain";
 
 const showModal = (n: string) =>
   // @ts-expect-error this is standard for daisyUI
@@ -32,7 +38,7 @@ const AvalancheNetwork = () => (
       width={30}
       height={30}
     />
-    <span className="text-gray-400">Avalanche</span>
+    <span className="text-current">Avalanche</span>
   </div>
 );
 
@@ -45,33 +51,77 @@ const CoqNetwork = () => (
       width={30}
       height={30}
     />
-    <span className="text-gray-400">Coqnet</span>
+    <span className="text-current">Coqnet</span>
   </div>
 );
 
 const Swap = () => {
-  const [direction, setDirection] = useState<"coqnet" | "fuji">("coqnet");
-  const [coqnetBalance, setCoqnetBalance] = useState(0);
-  const [fujiBalance, setFujiBalance] = useState(0);
-  const [swapAmount, setSwapAmount] = useState(0);
+  const [swapAmount, setSwapAmount] = useState<number | null>();
   const { switchChain, chains } = useSwitchChain();
   const chainID = useChainId();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [bridging, setBridging] = useState(false);
   const { address } = useAccount();
-
-  const formattedSwapAmount = parseEther(swapAmount.toString());
-
+  const formattedSwapAmount = parseEther(swapAmount?.toString() || "0");
   const { writeContract: writeCoqnet, error } = useWriteContract();
-  const { allowance } = useTokenInfo(CoqinuFuji, address, erc20SourceAddress);
-  useAsyncEffect(async () => {
-    if (!address) return;
-    // check /api/balance to see if the user has any Coq
-    const res = await fetch(`/api/balance?address=${address}`);
-    const data = await res.json();
-    setFujiBalance(data.fuji);
-    setCoqnetBalance(data.coqnet);
+  const {
+    allowance: fujiAllowance,
+    balanceOf: fujiBalance,
+    refetch: refetchFujiToken,
+  } = useTokenInfo(
+    CoqinuFuji,
+    address,
+    erc20SourceAddress,
+    publicFujiClient.chain.id
+  );
+  const { data: coqnetBalance, refetch: refetchNative } = useBalance({
+    address,
+    chainId: coqnet.id,
+  });
+  const refetch = () => {
+    refetchFujiToken();
+    refetchNative();
+  };
+  const handleFujiTransactionSubmitted = async (txHash: string) => {
+    if (!txHash || !publicFujiClient) return;
+    const transactionReceipt = await publicFujiClient.waitForTransactionReceipt(
+      {
+        hash: txHash as `0x${string}`,
+      }
+    );
+
+    if (transactionReceipt.status === "success") {
+      refetch();
+    }
     setLoading(false);
-  }, [address, loading]);
+  };
+
+  const handleCoqnetTransactionSubmitted = async (txHash: string) => {
+    if (!txHash || !publicCoqnetClient) return;
+    const transactionReceipt =
+      await publicCoqnetClient.waitForTransactionReceipt({
+        hash: txHash as `0x${string}`,
+      });
+
+    if (transactionReceipt.status === "success") {
+      refetch();
+    }
+    setLoading(false);
+  };
+
+  const handleFujiSwapTransactionSubmitted = async (txHash: string) => {
+    setBridging(true);
+    await handleFujiTransactionSubmitted(txHash);
+    setBridging(false);
+    setSwapAmount(0);
+  };
+
+  const handleCoqnetSwapTransactionSubmitted = async (txHash: string) => {
+    setBridging(true);
+    await handleCoqnetTransactionSubmitted(txHash);
+    setBridging(false);
+    setSwapAmount(0);
+  };
 
   useEffect(() => {
     console.log(chains);
@@ -79,15 +129,18 @@ const Swap = () => {
 
   useEffect(() => {
     if (error) {
+      setLoading(false);
       showModal("error_coq");
       console.error(error);
     }
   }, [error]);
 
   const toggleDirection = () => {
-    setDirection(direction === "coqnet" ? "fuji" : "coqnet");
     swapChain();
   };
+
+  const direction =
+    chainID === publicFujiClient.chain.id ? "fujiToCoqnet" : "coqnetToFuji";
 
   const swapChain = () => {
     // there's only two chains, so we can just toggle between them
@@ -111,72 +164,87 @@ const Swap = () => {
       })
         .then((res) => res.json())
         .then((data) => {
-          console.log(data);
-          setLoading(false);
+          refetchFujiToken();
           showModal("got_coq");
-        });
+        })
+        .finally(() => setLoading(false));
     }
-    setLoading(false);
   };
 
   const swapCoq = () => {
-    console.log("swapCoq");
     if (!address || swapAmount == 0) return;
+    setLoading(true);
     if (chainID === 43113) {
-      writeCoqnet({
-        address: erc20SourceAddress,
-        abi: erc20source,
-        functionName: "send",
-        args: [
-          [
-            coqnetBlockchainIDHex,
-            nativeTokenDestinationAddress,
-            address,
-            CoqinuFuji,
-            0n,
-            0n,
-            250000n, // Gas is important to be high enough at the moment, lest it suck up your tokens
-            zeroAddress,
+      writeCoqnet(
+        {
+          address: erc20SourceAddress,
+          abi: erc20source,
+          functionName: "send",
+          args: [
+            [
+              coqnetBlockchainIDHex,
+              nativeTokenDestinationAddress,
+              address,
+              CoqinuFuji,
+              0n,
+              0n,
+              250000n, // Gas is important to be high enough at the moment, lest it suck up your tokens
+              zeroAddress,
+            ],
+            formattedSwapAmount,
           ],
-          formattedSwapAmount,
-        ],
-      });
+        },
+        {
+          onSuccess: handleFujiSwapTransactionSubmitted,
+        }
+      );
     } else {
-      writeCoqnet({
-        address: nativeTokenDestinationAddress,
-        abi: nativeTokenDestination,
-        functionName: "send",
-        args: [
-          [
-            fujiCChainBlockchainIDHex,
-            erc20SourceAddress,
-            address,
-            zeroAddress,
-            0n,
-            0n,
-            250000n, // Gas is important to be high enough at the moment, lest it suck up your tokens
-            zeroAddress,
+      writeCoqnet(
+        {
+          address: nativeTokenDestinationAddress,
+          abi: nativeTokenDestination,
+          functionName: "send",
+          args: [
+            [
+              fujiCChainBlockchainIDHex,
+              erc20SourceAddress,
+              address,
+              zeroAddress,
+              0n,
+              0n,
+              250000n, // Gas is important to be high enough at the moment, lest it suck up your tokens
+              zeroAddress,
+            ],
           ],
-        ],
-        value: formattedSwapAmount,
-      });
+          value: formattedSwapAmount,
+        },
+        {
+          onSuccess: handleCoqnetSwapTransactionSubmitted,
+        }
+      );
     }
   };
 
   const approveCoq = () => {
     if (!address || swapAmount == 0) return;
     if (chainID === 43113) {
-      writeCoqnet({
-        address: CoqinuFuji,
-        abi: erc20,
-        functionName: "approve",
-        args: [erc20SourceAddress, formattedSwapAmount],
-      });
+      setLoading(true);
+      writeCoqnet(
+        {
+          address: CoqinuFuji,
+          abi: erc20,
+          functionName: "approve",
+          args: [erc20SourceAddress, formattedSwapAmount],
+        },
+        {
+          onSuccess: handleFujiTransactionSubmitted,
+        }
+      );
     }
   };
 
   const ActionButton = () => {
-    if (fujiBalance == 0) {
+    if (fujiBalance <= 1n) {
       return (
         <button
           disabled={loading}
@@ -187,7 +255,7 @@ const Swap = () => {
           Get Some Coq
         </button>
       );
-    } else if (allowance < formattedSwapAmount && chainID === 43113) {
+    } else if (fujiAllowance < formattedSwapAmount && chainID === 43113) {
       return (
         <button
           disabled={loading}
@@ -201,7 +269,7 @@ const Swap = () => {
     } else {
       return (
         <button
-          disabled={loading}
+          disabled={loading || !swapAmount}
           onClick={swapCoq}
           className="btn btn-success btn-lg btn-wide"
         >
@@ -212,38 +280,46 @@ const Swap = () => {
     }
   };
   return (
-    <div className="card bg-black p-6 max-w-4xl mx-auto rounded-xl text-white space-y-8">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
+    <div className="card bg-[#FFFFFF90] dark:bg-[#00000080] max-w-4xl w-full p-2 sm:p-6 md:p-8 mx-auto rounded-none lg:rounded-xl text-current space-y-6">
+      <div className=" md:flex-row flex items-start justify-between md:items-center flex-col-reverse">
+        <div className="flex space-y-2 flex-col">
           <h1 className="text-4xl font-bold">Bridge</h1>
-          <p className="text-gray-400">
+          <p className="dark:text-gray-400 text-gray-800">
             Transfer your tokens from one network to another.
           </p>
         </div>
-        <ConnectButton />
+        <div className="self-end">
+          <RainbowKitCustomConnectButton />
+        </div>
       </div>
 
       {/* From Section */}
-      <div className="card bg-gray-900 p-6 max-w-4xl mx-auto rounded-xl text-white space-y-8">
+      <div className="card dark:bg-[#00000080] bg-[#00000010]  p-6 max-w-4xl mx-auto rounded-xl text-current space-y-8">
         <div className="flex justify-between space-x-8 items-center">
           <div className="rounded-lg space-y-4">
             <h4 className="text-xl font-bold">From</h4>
-            {direction === "coqnet" ? <AvalancheNetwork /> : <CoqNetwork />}
+            {direction === "fujiToCoqnet" ? (
+              <AvalancheNetwork />
+            ) : (
+              <CoqNetwork />
+            )}
             <div className="flex items-end justify-between space-x-4">
               <input
                 placeholder="0.0"
                 type="number"
+                value={swapAmount || ""}
                 onChange={(e) => setSwapAmount(Number(e.target.value))}
-                className="input input-bordered input-primary flex-1 text-white bg-gray-500 placeholder-gray-500 border-none outline-none max-w-full"
+                className="input input-bordered dark:bg-[#0a0a0a] dark:border-current border input-ghost flex-1 text-current max-w-full"
               />
             </div>
             {/* Display the user's balance on c chain */}
             <div className="flex items-center justify-between">
-              <span className="text-gray-400 text-xs">
-                {direction === "coqnet"
-                  ? fujiBalance.toFixed(0)
-                  : coqnetBalance.toFixed(0)}{" "}
+              <span className="text-current text-xs">
+                {direction === "fujiToCoqnet"
+                  ? Number(formatEther(fujiBalance || 0n)).toFixed(2)
+                  : Number(formatEther(coqnetBalance?.value || 0n)).toFixed(
+                      0
+                    )}{" "}
                 COQ token available
               </span>
             </div>
@@ -253,44 +329,41 @@ const Swap = () => {
               className="flex flex-col items-center justify-center space-y-4 hover:cursor-pointer"
               onClick={toggleDirection}
             >
-              <div className="w-px h-24 bg-gray-400"></div>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-8 w-8 text-gray-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 7l5 5m0 0l-5 5m5-5H6"
+              <div className="w-px h-20 bg-current"></div>
+              <span className="p-4 rounded-full dark:bg-[#FFFFFF10] bg-base-100">
+                <BiTransferAlt
+                  className={`h-8 w-8 text-current border-current ${
+                    bridging ? "animate-transfer" : ""
+                  }`}
                 />
-              </svg>
-              <div className="w-px h-24 bg-gray-400"></div>
+              </span>
+              <div className="w-px h-20 bg-current"></div>
             </div>
           </div>
           <div className="rounded-lg space-y-4">
             <h4 className="text-xl font-bold">To</h4>
-            {direction === "coqnet" ? <CoqNetwork /> : <AvalancheNetwork />}
-            <div className="flex items-end justify-between space-x-4">
+            {direction === "fujiToCoqnet" ? (
+              <CoqNetwork />
+            ) : (
+              <AvalancheNetwork />
+            )}
+            <div className="flex items-end justify-between space-x-4 cursor-not-allowed">
               <input
                 placeholder="0.0"
                 type="number"
-                value={swapAmount}
-                disabled
-                className="input input-bordered input-primary flex-1 text-white bg-gray-500 placeholder-gray-500 border-none outline-none max-w-full"
+                value={swapAmount || ""}
+                readOnly
+                className="input input-bordered  pointer-events-none dark:bg-[#0a0a0a] dark:border-current border input-ghost flex-1 text-current max-w-full"
               />
             </div>
             {/* Display the user's balance on c chain */}
             <div className="flex items-center justify-between">
-              <span className="text-gray-400 text-xs">
+              <span className="text-current text-xs">
                 {
                   // Display the user's balance on c chain
-                  direction === "coqnet"
-                    ? coqnetBalance.toFixed(0)
-                    : fujiBalance.toFixed(0)
+                  direction === "fujiToCoqnet"
+                    ? Number(formatEther(coqnetBalance?.value || 0n)).toFixed(0)
+                    : Number(formatEther(fujiBalance)).toFixed(2)
                 }{" "}
                 COQ token available
               </span>

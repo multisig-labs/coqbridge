@@ -1,12 +1,14 @@
-import { Address, erc20Abi, zeroAddress } from "viem";
-import { useReadContracts } from "wagmi";
+import { Address, Client, erc20Abi, zeroAddress } from "viem";
+import { UseReadContractsParameters, useReadContracts } from "wagmi";
 
 export const useTokenInfo = (
   tokenAddress?: Address,
   ownerAddress?: Address,
-  spender?: Address
+  spender?: Address,
+  chainId?: number
 ) => {
   const tokenConfig = {
+    chainId,
     abi: erc20Abi,
     address: tokenAddress,
   };
@@ -41,6 +43,7 @@ export const useTokenInfo = (
     ],
     allowFailure: false,
     query: {
+      refetchInterval: 5000,
       enabled:
         Boolean(ownerAddress) && Boolean(tokenAddress) && Boolean(spender),
     },

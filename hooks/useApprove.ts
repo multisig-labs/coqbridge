@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
-import { publicFujiClient as publicClient } from '../utils/wallet'
 import { erc20 } from '../utils/abi'
 import { useAccount, useWalletClient } from 'wagmi'
+import { publicFujiClient as publicClient } from '../utils/chain';
 
 const useApproveERC20 = (tokenAddress: `0x{string}`) => {
   const [isLoading, setIsLoading] = useState(false);
@@ -20,10 +20,10 @@ const useApproveERC20 = (tokenAddress: `0x{string}`) => {
         const { request } = await publicClient.simulateContract({
           abi: erc20,
           address: tokenAddress,
-          functionName: 'approve',
+          functionName: "approve",
           args: [spenderAddress, amountToApprove],
-          account: address
-        })
+          account: address,
+        });
 
         const hash = await walletClient?.writeContract(request)
         setTxHash(hash || null)
